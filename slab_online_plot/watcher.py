@@ -37,7 +37,7 @@ def setup_plot():
 def update_plot(data):
     global line
     x = data[0]
-    y = data[-16]
+    y = data[8]
     line.set_data(x,y)
     plt.xlim(np.min(x), np.max(x))
     plt.ylim(np.min(y), np.max(y))
@@ -46,7 +46,8 @@ if __name__ == "__main__":
     plt.close(1)
     fig = plt.figure(1)
     line = plt.plot(0,0)[0]
-    src_path = "/photonics/home/gac-slab/test/"
+    src_path = "/sf/slab/config/eco/test_acq/"
+    time.sleep(.01)
     event_handler = Handler()
     observer = watchdog.observers.Observer()
     observer.schedule(event_handler, path=src_path, recursive=True)
@@ -56,7 +57,10 @@ if __name__ == "__main__":
             time.sleep(.01)
             if config.update:
                 data = read_file(config.file_name)
+                print("updated data")
                 update_plot(data)
+                print("updated plot")
+                config.update = False
     except KeyboardInterrupt:
         observer.stop()
     observer.join()
