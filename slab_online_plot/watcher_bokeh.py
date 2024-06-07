@@ -7,7 +7,7 @@ from bokeh.layouts import widgetbox, column, row
 from bokeh.models import Slider
 import bokeh.plotting as plt
 from bokeh.colors import named
-from bokeh.models import Legend, LegendItem, Dropdown, CheckboxButtonGroup, CheckboxGroup, HoverTool, ColumnDataSource, Select, Slider, WheelZoomTool, Range1d, markers, Arrow, NormalHead, Panel, Tabs, ColumnDataSource, DataTable, TableColumn, Circle, Whisker, TeeHead
+from bokeh.models import Legend, LegendItem, Dropdown, CheckboxButtonGroup, CheckboxGroup, HoverTool, ColumnDataSource, Select, Slider, WheelZoomTool, Range1d, markers, Arrow, NormalHead, Panel, Tabs, ColumnDataSource, DataTable, TableColumn, Circle, Whisker, TeeHead, Paragraph
 from bokeh.io import output_notebook, show, push_notebook, output_file, curdoc
 #output_file("test.html")
 from bokeh.events import Tap
@@ -275,7 +275,8 @@ class Data_Visualization():
             blocks.append(Tabs(tabs=tabs, sizing_mode="scale_width"))
         self.document =curdoc()
         
-        col2 = column(dropdown, checkbox_button_group, *blocks, run_table, sizing_mode="stretch_width")
+        #col2 = column(dropdown, checkbox_button_group, *blocks, run_table, sizing_mode="stretch_width")
+        col2 = column(dropdown, checkbox_button_group, Paragraph(text="Current Scan", align="center"), blocks[0], Paragraph(text="Selected Scans", align="center"), blocks[1], run_table, sizing_mode="stretch_width")
         #col1 = column(dropdown, checkbox_button_group, run_table)
         layout =col2
         self.document.add_root(layout)
@@ -311,6 +312,7 @@ class Data_Visualization():
         self._src_path = f"/sf/slab/data/{event.item}/res/scan_data/"
         cols, data = self.get_run_table_data()
         self.table_source.data = data
+        self.selected_runs={}
         self._new_pgroup = True
         pass
 
