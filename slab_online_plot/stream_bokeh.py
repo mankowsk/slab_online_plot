@@ -16,7 +16,7 @@ import time
 from collections import deque
 from threading import Thread
 import os
-os.sys.path.insert(0,"/sf/slab/config/src/python/eco/")
+os.sys.path.insert(0,"/slab/config/src/python/eco/")
 from eco.acquisition.ioxos_slab import Slab_Ioxos, Slab_Ioxos_Daq
 
 

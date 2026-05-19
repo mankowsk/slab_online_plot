@@ -46,7 +46,7 @@ if __name__ == "__main__":
     plt.close(1)
     fig = plt.figure(1)
     line = plt.plot(0,0)[0]
-    src_path = "/sf/slab/config/eco/test_acq/"
+    src_path = "/slab/config/eco/test_acq/"
     time.sleep(.01)
     event_handler = Handler()
     observer = watchdog.observers.Observer()
