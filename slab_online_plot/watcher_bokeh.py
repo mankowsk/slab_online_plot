@@ -109,10 +109,45 @@ class Data_Visualization():
         self.colors = [named.__dict__[c] for c in ["darkblue", "blue", "blueviolet", "crimson", "darkorange", "gold", "green", "lightseagreen"]]
         colors = self.colors
 
+        hover_tool = HoverTool(
+            tooltips=[
+                ("Run/Ch", "@labels"),
+                ("X", "$x"),
+                ("Y", "$y"),
+            ],
+            mode='vline', # This makes it easier to "hit" a line by just being at the same X
+            line_policy = 'interp',
+        )
+        from bokeh.models.tools import CustomJSHover
+        
+        # JS for X-coordinate
+        code = """
+            const si = special_vars.segment_index;
+            return value[si].toPrecision(4);
+        """
+        custom_hover = CustomJSHover(code=code)
+
+        hover_tool_selected = HoverTool(
+        tooltips=[
+                ("Run", "@labels"),
+                ("X", "@xs{custom}"), # Use @xs but process it with 'custom'
+                ("Y", "@ys{custom}"),
+            ],
+            formatters={
+                "@xs": custom_hover,
+                "@ys": custom_hover
+            },
+            line_policy = 'nearest',
+            mode='mouse',
+            point_policy="snap_to_data",
+            attachment='vertical' 
+        )
+
+
         self.figures = {
             "current": {
                 "abs": {
-                    "fig": plt.figure(tools=["pan,wheel_zoom,box_zoom,reset,save"], sizing_mode="stretch_both"),#hover
+                    "fig": plt.figure(tools=["pan,wheel_zoom,box_zoom,reset,save",hover_tool], sizing_mode="stretch_both"),#hover
                     "sources": {
                         "on": {n: ColumnDataSource(data=dict(x=[0,1], y=[0,1], upper=[.1,1.1], lower=[-.1,0.9], labels=[f"Ch {n}"])) for n in range(8)},
                         #"on": {n: ColumnDataSource(data=dict(x=[0,1], y=[0,1], upper=[.1,1.1], lower=[-.1,0.9])) for n in range(8)},
@@ -132,7 +167,7 @@ class Data_Visualization():
                         },
                     },
                 "ratio": {
-                    "fig": plt.figure(tools=["pan,wheel_zoom,box_zoom,reset,save"], sizing_mode="stretch_both"),#hover
+                    "fig": plt.figure(tools=["pan,wheel_zoom,box_zoom,reset,save", hover_tool], sizing_mode="stretch_both"),#hover
                     "sources": {
                         "ratio": {n: ColumnDataSource(data=dict(x=[0,1], y=[0,.1], upper=[.1,0.2], lower=[-.1,0], labels=[f"Ch {n}"])) for n in range(8)},
                         #"ratio": {n: ColumnDataSource(data=dict(x=[0,1], y=[0,.1], upper=[.1,0.2], lower=[-.1,0])) for n in range(8)},
@@ -153,7 +188,7 @@ class Data_Visualization():
                 },
             "selected": {
                 "abs": {
-                    "fig": plt.figure(tools=["pan,wheel_zoom,box_zoom,reset,save"], sizing_mode="stretch_both"),#hoverav
+                    "fig": plt.figure(tools=["pan,wheel_zoom,box_zoom,reset,save", hover_tool_selected], sizing_mode="stretch_both"),#hoverav
                     #"fig": plt.figure(tools=[hoverav,"pan,wheel_zoom,box_zoom,reset,save"]),
                     "sources": {
                         "on": {n: ColumnDataSource(data=dict(xs=[[0,1,2],[1,2,3]], ys=[[1,2,3],[1,2,3]], labels=[f"Ch {n} 1",f"Ch {n} 2"], alpha=[1,1], colors=self.create_color_palette(2, self.colors[n]))) for n in range(8)},
@@ -181,7 +216,7 @@ class Data_Visualization():
                         },
                     },
                 "ratio": {
-                    "fig": plt.figure(tools=["pan,wheel_zoom,box_zoom,reset,save"], sizing_mode="stretch_both"),#hoverav
+                    "fig": plt.figure(tools=["pan,wheel_zoom,box_zoom,reset,save", hover_tool_selected], sizing_mode="stretch_both"),#hoverav
                     #"fig": plt.figure(tools=[hoverav,"pan,wheel_zoom,box_zoom,reset,save"]),
                     "sources": {
                         "ratio": {n: ColumnDataSource(data=dict(xs=[[0,1,2],[1,2,3]], ys=[[1,2,3],[1,2,3]], labels=[f"Ch {n} 1",f"Ch {n} 2"], alpha=[1,1], colors=self.create_color_palette(2, self.colors[n]))) for n in range(8)},
@@ -210,7 +245,9 @@ class Data_Visualization():
                 fig = dat["fig"]
                 fig.y_range.only_visible = True
                 fig.x_range.only_visible = True
-                lis = []
+                if block == "selected":
+                    leg = Legend(items=[])
+                    fig.add_layout(leg)
                 for label, chdat in dat["sources"].items():
                     for n, (ch, source) in enumerate(chdat.items()):
                         if block == "selected":
@@ -220,19 +257,11 @@ class Data_Visualization():
                             if label =="off":
                                 self.figures[block][panel]["lines"][label][ch]=fig.multi_line(xs='xs',ys='ys',source=source, line_color='colors', line_width=2, line_alpha='alpha')
                             elif label=="on":
-                                self.figures[block][panel]["lines"][label][ch]=fig.multi_line(xs='xs',ys='ys',source=source, line_color='colors', line_width=2, line_alpha='alpha', legend_field='labels')
-                                #self.figures[block][panel]["lines"][label][ch]=fig.multi_line(source=source, line_color='colors', line_width=2, line_alpha='alpha')
-                                #li = LegendItem()
-                                #li.label = {'field': 'labels'}
-                                #li.renderers=[self.figures[block][panel]["lines"][label][ch]]
-                                #lis.append(li)
+                                self.figures[block][panel]["lines"][label][ch]=fig.multi_line(xs='xs',ys='ys',source=source, line_color='colors', line_width=2, line_alpha='alpha')
+
                             elif label=="ratio":
-                                self.figures[block][panel]["lines"][label][ch]=fig.multi_line(xs='xs',ys='ys',source=source, line_color='colors', line_width=2, line_alpha='alpha', legend_field='labels')
-                                #self.figures[block][panel]["lines"][label][ch]=fig.multi_line(source=source, line_color='colors', line_width=2, line_alpha='alpha')
-                                #li = LegendItem()
-                                #li.label = {'field': 'labels'}
-                                #li.renderers=[self.figures[block][panel]["lines"][label][ch]]
-                                #lis.append(li)
+                                self.figures[block][panel]["lines"][label][ch]=fig.multi_line(xs='xs',ys='ys',source=source, line_color='colors', line_width=2, line_alpha='alpha')
+
                             elif label == "off_av":
                                 self.figures[block][panel]["lines"][label][ch]=fig.line(x='x',y='y',source=source, line_color=colors[ch], line_width=4, line_alpha=.5)
                                 self.figures[block][panel]["markers"][label][ch]=fig.scatter(x='x',y='y',source=source, color=colors[ch], size=7, alpha=.5, marker="circle")
@@ -263,11 +292,7 @@ class Data_Visualization():
                                 errors = Whisker(source=source, base='x', upper='upper', lower='lower', level="overlay",line_color=colors[ch], line_width=2, line_alpha=1, upper_units='data', lower_units='data', upper_head=TeeHead(line_color=colors[ch], line_alpha=1), lower_head=TeeHead(line_color=colors[ch], line_alpha=1))
                                 self.figures[block][panel]["errors"][label][ch]= errors 
                                 fig.add_layout(errors)
-                #if len(lis) > 0:
-                    #legend = Legend(items = lis)
-                    #fig.add_layout(legend)
-                    ##fig.legend.items = lis
-                #self.figures[block][panel]["legend"]=fig.legend
+
 
                 tabs.append(TabPanel(child=fig, title=panel))
             blocks.append(Tabs(tabs=tabs, sizing_mode="stretch_both", min_height=200))#, sizing_mode="stretch_width"))
@@ -320,28 +345,26 @@ class Data_Visualization():
 
     def on_change_selected_chs_cb(self, attrname, old, new):
         self.active_channels = new
-        #just need to set visibility
-        for block, val in self.figures.items():
-            for panel, dat in val.items():
-                fig = dat["fig"]
-                legend_items = fig.legend.items
-                act_ids = []
+        for block_key, block_val in self.figures.items():
+            for panel_key, dat in block_val.items():
+                # Update Glyph Visibility
                 for obj in ["lines", "markers", "errors"]:
                     for label, linedat in dat[obj].items():
                         for ch, line in linedat.items():
-                            lineid = line.id
-                            if ch in self.active_channels:
-                                line.visible=True
-                                act_ids.append(lineid)
-                            else:
-                                line.visible = False
-                for li in legend_items:
-                    if li.renderers[0].id in act_ids:
-                        li.label = {"field": "labels"}
-                    else:
-                        li.label = {"value": None}
- 
-                                
+                            line.visible = (ch in self.active_channels)
+                
+                # Handle Legends differently per block
+                if block_key == "current":
+                    # Keep your original logic for the current block
+                    for li in dat["fig"].legend.items:
+                        if li.renderers[0].name and "Ch" in li.renderers[0].name:
+                            ch_idx = int(li.renderers[0].name.split()[0][2:]) # Extracting N from "ChN"
+                            li.visible = (ch_idx in self.active_channels)
+                else:
+                    # Refresh the 'selected' block legend to use a new proxy channel 
+                    # if the old one was hidden
+                    self.on_table_selected_cb(None, None, None)
+
 
     def on_table_selected_cb(self, attrname, old, new):
         if len(self.table_source.selected.indices) > 0:
@@ -368,7 +391,7 @@ class Data_Visualization():
         yons_err={n: [] for n in range(8)}
         yoffs_err={n: [] for n in range(8)}
 
-        block = self.figures["selected"]
+        selected_block = self.figures["selected"]
         sd =  {key: val for key, val in sorted(self.selected_runs.items(), key = lambda ele: ele[1])}
         labs = [f'Run{k}' for k in sd.keys()]
         for key, fpath in sd.items():
@@ -384,17 +407,39 @@ class Data_Visualization():
                 yons_err[n].append(data[nadj+n+16])
                 yoffs_err[n].append(data[nadj+n+8+16])
         for n in range(8):
-            block["abs"]["sources"]["on"][n].data=dict(xs=xs[n], ys=yons[n], alpha=np.full([(len(self.selected_runs.items()))],1), colors=self.create_color_palette(len(self.selected_runs),self.colors[n]), labels=[f'Ch{n} {l}' for l in labs])
-            block["abs"]["sources"]["off"][n].data=dict(xs=xs[n], ys=yoffs[n], alpha=np.full([(len(self.selected_runs.items()))],.5), colors=self.create_color_palette(len(self.selected_runs),self.colors[n]))
-            block["ratio"]["sources"]["ratio"][n].data=dict(xs=xs[n], ys=yratios[n], colors=self.create_color_palette(len(self.selected_runs),self.colors[n]), labels=[f'Ch{n} {l}' for l in labs], alpha=np.full([(len(self.selected_runs.items()))], 1))
+            selected_block["abs"]["sources"]["on"][n].data=dict(xs=xs[n], ys=yons[n], alpha=np.full([(len(self.selected_runs.items()))],1), colors=self.create_color_palette(len(self.selected_runs),self.colors[n]))
+            selected_block["abs"]["sources"]["off"][n].data=dict(xs=xs[n], ys=yoffs[n], alpha=np.full([(len(self.selected_runs.items()))],.5), colors=self.create_color_palette(len(self.selected_runs),self.colors[n]))
+            selected_block["ratio"]["sources"]["ratio"][n].data=dict(xs=xs[n], ys=yratios[n], colors=self.create_color_palette(len(self.selected_runs),self.colors[n]), alpha=np.full([(len(self.selected_runs.items()))], 1))
             if self.av:
                 x,yon,yon_err = self.calc_average_nobin(xs[n],yons[n],yons_err[n],nonshots[n])
-                block["abs"]["sources"]["on_av"][n].data=dict(x=x, y=yon, upper=yon+yon_err, lower=yon-yon_err)
+                selected_block["abs"]["sources"]["on_av"][n].data=dict(x=x, y=yon, upper=yon+yon_err, lower=yon-yon_err)
                 x,yoff,yoff_err = self.calc_average_nobin(xs[n],yoffs[n],yoffs_err[n],noffshots[n])
-                block["abs"]["sources"]["off_av"][n].data=dict(x=x, y=yoff, upper=yoff+yoff_err, lower=yoff-yoff_err)
+                selected_block["abs"]["sources"]["off_av"][n].data=dict(x=x, y=yoff, upper=yoff+yoff_err, lower=yoff-yoff_err)
                 yratio_err = np.sqrt((yon_err/yoff)**2+(yon/yoff**2*yoff_err)**2)
-                block["ratio"]["sources"]["ratio_av"][n].data=dict(x=x, y=yon/yoff, upper=yon/yoff+yratio_err, lower=yon/yoff-yratio_err)
-        self.table_source.selected.indices=[]
+                selected_block["ratio"]["sources"]["ratio_av"][n].data=dict(x=x, y=yon/yoff, upper=yon/yoff+yratio_err, lower=yon/yoff-yratio_err)
+        # MANUALLY REBUILD LEGENDS FOR 'SELECTED' ONLY
+        for panel_key in ["abs", "ratio"]:
+            fig = selected_block[panel_key]["fig"]
+            new_items = []
+            
+            # Check if we have active channels to represent the legend
+            if self.active_channels:
+                # Use the first active channel as the visual 'proxy' for the legend line style
+                proxy_ch = self.active_channels[0]
+                
+                # Determine which source key to use based on the panel
+                mode = "on" if panel_key == "abs" else "ratio"
+                renderer = selected_block[panel_key]["lines"][mode][proxy_ch]
+                
+                # Create one legend entry per run
+                for i, run_id in enumerate(sd.keys()):
+                    label = f"Run {run_id}"
+                    # 'index' tells Bokeh which specific line inside the MultiLine to look at
+                    new_items.append(LegendItem(label=label, renderers=[renderer], index=i))
+            
+            fig.legend.items = new_items
+
+        self.table_source.selected.indices = []
 
     def on_created_cb(self):
         cols, data = self.get_run_table_data()
@@ -404,16 +449,16 @@ class Data_Visualization():
     def on_modified_cb(self):
         data = self.read_file(config.file_name)
         if len(data.shape)>1:
-            block = self.figures["current"]
+            current_block = self.figures["current"]
             nadj = data.shape[0]-48
             for n in range(8):
                 x, yon, yoff, yon_std, yoff_std, yon_nshots, yoff_nshots =data[[0,nadj+n,nadj+n+8,nadj+n+16,nadj+n+24,nadj+n+32,nadj+n+40],:]
                 yon_err = yon_std/np.sqrt(yon_nshots)
                 yoff_err = yoff_std/np.sqrt(yoff_nshots)
                 yratio_err = np.sqrt((yon_err/yoff)**2+(yon/yoff**2*yoff_err)**2)
-                block["abs"]["sources"]["on"][n].data=dict(x=x, y=yon, upper=yon+yon_err, lower=yon-yon_err)
-                block["abs"]["sources"]["off"][n].data=dict(x=x, y=yoff, upper=yoff+yoff_err, lower=yoff-yoff_err)
-                block["ratio"]["sources"]["ratio"][n].data=dict(x=x, y=yon/yoff, upper=yon/yoff + yratio_err, lower = yon/yoff - yratio_err)
+                current_block["abs"]["sources"]["on"][n].data=dict(x=x, y=yon, upper=yon+yon_err, lower=yon-yon_err)
+                current_block["abs"]["sources"]["off"][n].data=dict(x=x, y=yoff, upper=yoff+yoff_err, lower=yoff-yoff_err)
+                current_block["ratio"]["sources"]["ratio"][n].data=dict(x=x, y=yon/yoff, upper=yon/yoff + yratio_err, lower = yon/yoff - yratio_err)
     
 dv = Data_Visualization()
 
