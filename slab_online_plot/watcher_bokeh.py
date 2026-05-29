@@ -338,9 +338,9 @@ class Data_Visualization():
         nshotsu = np.array([np.sum(nshots[idx==n]) for n in range(len(bins))])
         return xu, yu, yuerr/np.sqrt(nshotsu)
 
-    def calculate_aggregated_averages(self, xs_dict, ys_dict, yerrs_dict=None, use_median=True):
+    def calculate_aggregated_averages(self, xs_dict, ys_dict, yerrs_dict=None, use_median=False):
         """
-        Calculate aggregated average (mean or median) over selected runs with intelligent binning.
+        Calculate interpoalted average (median) over selected runs with intelligent binning.
 
         Args:
             xs_dict: dict mapping channel -> list of x arrays (one per run)
@@ -353,78 +353,41 @@ class Data_Visualization():
         """
         result = {}
 
+        # find x bins
+        ch=0
+        xs_all_runs = xs_dict[ch]  # list of x values for all runs of ch0
+
+        # Remove values that are too close to each other
+        x_diffs = np.concatenate([np.diff(xs) for xs in xs_all_runs])
+        x_min_diff = np.min(np.abs(x_diffs))
+
+        # Collect all unique x values across runs
+        x_unique = np.unique(np.concatenate(xs_all_runs))
+        x_unique_diffs = np.diff(x_unique)
+
+        if len(x_unique) < 2:
+            return (None, None, None)
+        
+        # Keep only x values where the gap to next is >= min gap (with 10% tolerance)
+        #x_bins = []
+        x_vals = [] 
+        xd = 0
+        for x, xdp in zip(x_unique, x_unique_diffs):
+            xd+=xdp
+            if xd>x_min_diff*0.9:
+                x_vals.append(x)
+                #x_bins.append(x+xd/2)
+                xd = 0
+        
+        x_vals = np.array(x_vals)
+        if len(x_vals) < 2:
+            return (None, None, None)
+        
         for ch in xs_dict.keys():
-            all_xs = xs_dict[ch]  # list of arrays
-            all_ys = ys_dict[ch]  # list of arrays
-
-            # Collect all unique x values across runs
-            x_conc = np.concatenate(all_xs)
-            x_unique = np.unique(x_conc)
-
-            if len(x_unique) < 2:
-                # Not enough data points to bin
-                result[ch] = (x_unique, np.nan, np.nan)
-                continue
-
-            # Remove values that are too close to each other
-            x_diffs = np.diff(x_unique)
-            x_min_gap = np.min(np.abs(x_diffs))
-
-            # Keep only x values where the gap to next is >= min gap (with small tolerance)
-            if len(x_diffs) > 0:
-                x_bin_mask = x_diffs >= (x_min_gap * 0.5)  # 50% tolerance for removing close points
-                x_binned = np.concatenate([x_unique[:-1][x_bin_mask], [x_unique[-1]]])
-            else:
-                x_binned = x_unique
-
-            if len(x_binned) < 2:
-                result[ch] = (x_binned, np.nan, np.nan)
-                continue
-
-            # For each bin center, collect all y values from runs that have data near this x
-            y_values_list = []
-            for run_idx, (xs_run, ys_run) in enumerate(zip(all_xs, all_ys)):
-                # Find indices where this run has data close to binned x values
-                for xb in x_binned:
-                    # Find points within a small tolerance of the bin center
-                    mask = np.abs(xs_run - xb) < (np.min(np.diff(x_binned)) / 2 if len(x_binned) > 1 else 1.0)
-                    if np.any(mask):
-                        y_values_list.append(ys_run[mask])
-
-            if not y_values_list:
-                result[ch] = (x_binned, np.nan, np.nan)
-                continue
-
             # Stack all y values for each bin and compute median/mean
-            y_avg_list = []
-            y_err_list = []
-
-            for xb in x_binned:
-                # Collect all y values near this bin center across all runs
-                nearby_ys = []
-                for xs_run, ys_run in zip(all_xs, all_ys):
-                    mask = np.abs(xs_run - xb) < (np.min(np.diff(x_binned)) / 2 if len(x_binned) > 1 else 1.0)
-                    if np.any(mask):
-                        nearby_ys.extend(ys_run[mask])
-
-                if len(nearby_ys) > 0:
-                    nearby_ys = np.array(nearby_ys)
-                    if use_median:
-                        y_avg = np.median(nearby_ys)
-                        # Use MAD (median absolute deviation) as error estimate, scaled for normal distribution
-                        mad = np.median(np.abs(nearby_ys - y_avg))
-                        y_err = mad * 1.4826 if mad > 0 else 0.0
-                    else:
-                        y_avg = np.mean(nearby_ys)
-                        y_err = np.std(nearby_ys) / np.sqrt(len(nearby_ys)) if len(nearby_ys) > 1 else 0.0
-
-                    y_avg_list.append(y_avg)
-                    y_err_list.append(y_err)
-                else:
-                    y_avg_list.append(np.nan)
-                    y_err_list.append(0.0)
-
-            result[ch] = (x_binned, np.array(y_avg_list), np.array(y_err_list))
+            y_interpolated = [np.interp(x_vals,x,y, left=np.nan, right=np.nan) for x, y in zip(xs_dict[ch], ys_dict[ch])]
+            y_avg_list = np.array(np.nanmedian(y_interpolated, axis=0))
+            result[ch] = (x_vals, np.array(y_avg_list), None)
 
         return result
 
@@ -528,16 +491,16 @@ class Data_Visualization():
                 avg_ratio = self.calculate_aggregated_averages(xs_dict, yratios_dict, use_median=True)
 
                 x_on_av, yon_av, yon_err = avg_on[n]
-                selected_block["abs"]["sources"]["on_av"][n].data=dict(x=x_on_av, y=yon_av, upper=yon_av+yon_err, lower=yon_av-yon_err)
+                selected_block["abs"]["sources"]["on_av"][n].data=dict(x=x_on_av, y=yon_av)
 
                 x_off_av, yoff_av, yoff_err = avg_off[n]
-                selected_block["abs"]["sources"]["off_av"][n].data=dict(x=x_off_av, y=yoff_av, upper=yoff_av+yoff_err, lower=yoff_av-yoff_err)
+                selected_block["abs"]["sources"]["off_av"][n].data=dict(x=x_off_av, y=yoff_av)
 
                 # Calculate ratio error from on/off averages using error propagation
                 yratio_av = yon_av / yoff_av if np.all(yoff_av != 0) else np.nan * np.ones_like(yon_av)
-                yratio_err = np.sqrt((yon_err/yoff_av)**2 + (yon_av/(yoff_av**2)*yoff_err)**2) if np.all(yoff_av != 0) else np.nan * np.ones_like(yon_av)
+                #yratio_err = np.sqrt((yon_err/yoff_av)**2 + (yon_av/(yoff_av**2)*yoff_err)**2) if np.all(yoff_av != 0) else np.nan * np.ones_like(yon_av)
 
-                selected_block["ratio"]["sources"]["ratio_av"][n].data=dict(x=x_on_av, y=yratio_av, upper=yratio_av+yratio_err, lower=yratio_av-yratio_err)
+                selected_block["ratio"]["sources"]["ratio_av"][n].data=dict(x=x_on_av, y=yratio_av)
         # MANUALLY REBUILD LEGENDS FOR 'SELECTED' ONLY
         for panel_key in ["abs", "ratio"]:
             fig = selected_block[panel_key]["fig"]
