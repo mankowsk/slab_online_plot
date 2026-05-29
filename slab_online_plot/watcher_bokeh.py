@@ -95,6 +95,11 @@ class Data_Visualization():
         self.active_channels = [0]
         checkbox_button_group.on_change('active', self.on_change_selected_chs_cb)
 
+        ### checkbox for showing averages ###
+        show_averages_checkbox = CheckboxGroup(labels=["Show averaged data (median)"], active=[0], sizing_mode="stretch_width")
+        show_averages_checkbox.on_change('active', self.on_show_averages_cb)
+        self.show_averages = True
+
         ### data table run selection ###
         self.table_source=None
         cols, data = self.get_run_table_data()
@@ -299,7 +304,7 @@ class Data_Visualization():
         self.document =curdoc()
         
         #col2 = column(dropdown, checkbox_button_group, *blocks, run_table, sizing_mode="stretch_width")
-        col2 = column(dropdown, checkbox_button_group, Paragraph(text="Current Scan", align="center"), blocks[0], Paragraph(text="Selected Scans", align="center"), blocks[1], run_table, sizing_mode="stretch_both", min_height=1200)#sizing_mode="stretch_width")
+        col2 = column(show_averages_checkbox, dropdown, checkbox_button_group, Paragraph(text="Current Scan", align="center"), blocks[0], Paragraph(text="Selected Scans", align="center"), blocks[1], run_table, sizing_mode="stretch_both", min_height=1200)#sizing_mode="stretch_width")
         #col2 = column(dropdown, fig, run_table)
         layout =col2
         self.document.add_root(layout)
@@ -332,6 +337,96 @@ class Data_Visualization():
         yuerr = np.array([np.sum(yerrs[idx==n])/np.sum(nshots[idx==n]) for n in range(len(bins))])
         nshotsu = np.array([np.sum(nshots[idx==n]) for n in range(len(bins))])
         return xu, yu, yuerr/np.sqrt(nshotsu)
+
+    def calculate_aggregated_averages(self, xs_dict, ys_dict, yerrs_dict=None, use_median=True):
+        """
+        Calculate aggregated average (mean or median) over selected runs with intelligent binning.
+
+        Args:
+            xs_dict: dict mapping channel -> list of x arrays (one per run)
+            ys_dict: dict mapping channel -> list of y arrays (one per run)
+            yerrs_dict: optional dict mapping channel -> list of yerr arrays (one per run)
+            use_median: if True use median, otherwise use mean
+
+        Returns:
+            dict mapping channel -> (x_binned, y_avg, y_err) for binned aggregated data
+        """
+        result = {}
+
+        for ch in xs_dict.keys():
+            all_xs = xs_dict[ch]  # list of arrays
+            all_ys = ys_dict[ch]  # list of arrays
+
+            # Collect all unique x values across runs
+            x_conc = np.concatenate(all_xs)
+            x_unique = np.unique(x_conc)
+
+            if len(x_unique) < 2:
+                # Not enough data points to bin
+                result[ch] = (x_unique, np.nan, np.nan)
+                continue
+
+            # Remove values that are too close to each other
+            x_diffs = np.diff(x_unique)
+            x_min_gap = np.min(np.abs(x_diffs))
+
+            # Keep only x values where the gap to next is >= min gap (with small tolerance)
+            if len(x_diffs) > 0:
+                x_bin_mask = x_diffs >= (x_min_gap * 0.5)  # 50% tolerance for removing close points
+                x_binned = np.concatenate([x_unique[:-1][x_bin_mask], [x_unique[-1]]])
+            else:
+                x_binned = x_unique
+
+            if len(x_binned) < 2:
+                result[ch] = (x_binned, np.nan, np.nan)
+                continue
+
+            # For each bin center, collect all y values from runs that have data near this x
+            y_values_list = []
+            for run_idx, (xs_run, ys_run) in enumerate(zip(all_xs, all_ys)):
+                # Find indices where this run has data close to binned x values
+                for xb in x_binned:
+                    # Find points within a small tolerance of the bin center
+                    mask = np.abs(xs_run - xb) < (np.min(np.diff(x_binned)) / 2 if len(x_binned) > 1 else 1.0)
+                    if np.any(mask):
+                        y_values_list.append(ys_run[mask])
+
+            if not y_values_list:
+                result[ch] = (x_binned, np.nan, np.nan)
+                continue
+
+            # Stack all y values for each bin and compute median/mean
+            y_avg_list = []
+            y_err_list = []
+
+            for xb in x_binned:
+                # Collect all y values near this bin center across all runs
+                nearby_ys = []
+                for xs_run, ys_run in zip(all_xs, all_ys):
+                    mask = np.abs(xs_run - xb) < (np.min(np.diff(x_binned)) / 2 if len(x_binned) > 1 else 1.0)
+                    if np.any(mask):
+                        nearby_ys.extend(ys_run[mask])
+
+                if len(nearby_ys) > 0:
+                    nearby_ys = np.array(nearby_ys)
+                    if use_median:
+                        y_avg = np.median(nearby_ys)
+                        # Use MAD (median absolute deviation) as error estimate, scaled for normal distribution
+                        mad = np.median(np.abs(nearby_ys - y_avg))
+                        y_err = mad * 1.4826 if mad > 0 else 0.0
+                    else:
+                        y_avg = np.mean(nearby_ys)
+                        y_err = np.std(nearby_ys) / np.sqrt(len(nearby_ys)) if len(nearby_ys) > 1 else 0.0
+
+                    y_avg_list.append(y_avg)
+                    y_err_list.append(y_err)
+                else:
+                    y_avg_list.append(np.nan)
+                    y_err_list.append(0.0)
+
+            result[ch] = (x_binned, np.array(y_avg_list), np.array(y_err_list))
+
+        return result
 
 
     ### callbacks
@@ -366,6 +461,13 @@ class Data_Visualization():
                     self.on_table_selected_cb(None, None, None)
 
 
+    def on_show_averages_cb(self, attrname, old, new):
+        """Toggle visibility of averaged data."""
+        self.show_averages = len(new) > 0
+        # Re-trigger the table selection callback to update visibility
+        if len(self.selected_runs) > 0:
+            self.on_table_selected_cb(attrname, old, new)
+
     def on_table_selected_cb(self, attrname, old, new):
         if len(self.table_source.selected.indices) > 0:
             idx = self.table_source.selected.indices[0]
@@ -378,7 +480,7 @@ class Data_Visualization():
             run = self.selected_runs.pop(run)
             sel[idx]=""
             self.table_source.data["selected"]=sel
-        else: 
+        else:
             self.selected_runs[run]=self.runs[run]
             sel[idx]="X"
             self.table_source.data["selected"]=sel
@@ -406,17 +508,36 @@ class Data_Visualization():
                 yratios[n].append(data[nadj+n]/data[nadj+n+8])
                 yons_err[n].append(data[nadj+n+16])
                 yoffs_err[n].append(data[nadj+n+8+16])
+
         for n in range(8):
             selected_block["abs"]["sources"]["on"][n].data=dict(xs=xs[n], ys=yons[n], alpha=np.full([(len(self.selected_runs.items()))],1), colors=self.create_color_palette(len(self.selected_runs),self.colors[n]))
             selected_block["abs"]["sources"]["off"][n].data=dict(xs=xs[n], ys=yoffs[n], alpha=np.full([(len(self.selected_runs.items()))],.5), colors=self.create_color_palette(len(self.selected_runs),self.colors[n]))
             selected_block["ratio"]["sources"]["ratio"][n].data=dict(xs=xs[n], ys=yratios[n], colors=self.create_color_palette(len(self.selected_runs),self.colors[n]), alpha=np.full([(len(self.selected_runs.items()))], 1))
-            if self.av:
-                x,yon,yon_err = self.calc_average_nobin(xs[n],yons[n],yons_err[n],nonshots[n])
-                selected_block["abs"]["sources"]["on_av"][n].data=dict(x=x, y=yon, upper=yon+yon_err, lower=yon-yon_err)
-                x,yoff,yoff_err = self.calc_average_nobin(xs[n],yoffs[n],yoffs_err[n],noffshots[n])
-                selected_block["abs"]["sources"]["off_av"][n].data=dict(x=x, y=yoff, upper=yoff+yoff_err, lower=yoff-yoff_err)
-                yratio_err = np.sqrt((yon_err/yoff)**2+(yon/yoff**2*yoff_err)**2)
-                selected_block["ratio"]["sources"]["ratio_av"][n].data=dict(x=x, y=yon/yoff, upper=yon/yoff+yratio_err, lower=yon/yoff-yratio_err)
+
+            # Conditionally add aggregated average lines (median) if checkbox is enabled
+            if self.show_averages:
+                # Prepare data for aggregated averages using new function
+                xs_dict = {n: np.array(xs[n]) for n in range(8)}
+                ys_on_dict = {n: np.array(yons[n]) for n in range(8)}
+                ys_off_dict = {n: np.array(yoffs[n]) for n in range(8)}
+                yratios_dict = {n: np.array(yratios[n]) for n in range(8)}
+
+                # Calculate aggregated averages (median) with intelligent binning
+                avg_on = self.calculate_aggregated_averages(xs_dict, ys_on_dict, use_median=True)
+                avg_off = self.calculate_aggregated_averages(xs_dict, ys_off_dict, use_median=True)
+                avg_ratio = self.calculate_aggregated_averages(xs_dict, yratios_dict, use_median=True)
+
+                x_on_av, yon_av, yon_err = avg_on[n]
+                selected_block["abs"]["sources"]["on_av"][n].data=dict(x=x_on_av, y=yon_av, upper=yon_av+yon_err, lower=yon_av-yon_err)
+
+                x_off_av, yoff_av, yoff_err = avg_off[n]
+                selected_block["abs"]["sources"]["off_av"][n].data=dict(x=x_off_av, y=yoff_av, upper=yoff_av+yoff_err, lower=yoff_av-yoff_err)
+
+                # Calculate ratio error from on/off averages using error propagation
+                yratio_av = yon_av / yoff_av if np.all(yoff_av != 0) else np.nan * np.ones_like(yon_av)
+                yratio_err = np.sqrt((yon_err/yoff_av)**2 + (yon_av/(yoff_av**2)*yoff_err)**2) if np.all(yoff_av != 0) else np.nan * np.ones_like(yon_av)
+
+                selected_block["ratio"]["sources"]["ratio_av"][n].data=dict(x=x_on_av, y=yratio_av, upper=yratio_av+yratio_err, lower=yratio_av-yratio_err)
         # MANUALLY REBUILD LEGENDS FOR 'SELECTED' ONLY
         for panel_key in ["abs", "ratio"]:
             fig = selected_block[panel_key]["fig"]
