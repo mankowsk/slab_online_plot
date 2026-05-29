@@ -39,7 +39,7 @@ class Handler(watchdog.events.PatternMatchingEventHandler):
 class Data_Visualization():
     def __init__(self):
         self._new_pgroup = False
-        self.av = False
+        self.av = True
         self.setup_plot()
         self.observer_thread = Thread(target=self.watch_files, daemon=False)
         self.observer_thread.start()
@@ -338,15 +338,14 @@ class Data_Visualization():
         nshotsu = np.array([np.sum(nshots[idx==n]) for n in range(len(bins))])
         return xu, yu, yuerr/np.sqrt(nshotsu)
 
-    def calculate_aggregated_averages(self, xs_dict, ys_dict, yerrs_dict=None, use_median=False):
+    def calculate_aggregated_averages(self, xs_dict, ys_dict, yerrs_dict=None):
         """
-        Calculate interpoalted average (median) over selected runs with intelligent binning.
+        Calculate interpoalted average (mean) over selected runs with intelligent binning.
 
         Args:
             xs_dict: dict mapping channel -> list of x arrays (one per run)
             ys_dict: dict mapping channel -> list of y arrays (one per run)
             yerrs_dict: optional dict mapping channel -> list of yerr arrays (one per run)
-            use_median: if True use median, otherwise use mean
 
         Returns:
             dict mapping channel -> (x_binned, y_avg, y_err) for binned aggregated data
@@ -378,7 +377,7 @@ class Data_Visualization():
                 x_vals.append(x)
                 #x_bins.append(x+xd/2)
                 xd = 0
-        
+
         x_vals = np.array(x_vals)
         if len(x_vals) < 2:
             return (None, None, None)
@@ -386,8 +385,8 @@ class Data_Visualization():
         for ch in xs_dict.keys():
             # Stack all y values for each bin and compute median/mean
             y_interpolated = [np.interp(x_vals,x,y, left=np.nan, right=np.nan) for x, y in zip(xs_dict[ch], ys_dict[ch])]
-            y_avg_list = np.array(np.nanmedian(y_interpolated, axis=0))
-            result[ch] = (x_vals, np.array(y_avg_list), None)
+            y_avg = np.array(np.nanmean(y_interpolated, axis=0))
+            result[ch] = (x_vals, np.array(y_avg), None)
 
         return result
 
@@ -478,18 +477,16 @@ class Data_Visualization():
             selected_block["ratio"]["sources"]["ratio"][n].data=dict(xs=xs[n], ys=yratios[n], colors=self.create_color_palette(len(self.selected_runs),self.colors[n]), alpha=np.full([(len(self.selected_runs.items()))], 1))
 
             # Conditionally add aggregated average lines (median) if checkbox is enabled
-            if self.show_averages:
-                # Prepare data for aggregated averages using new function
-                xs_dict = {n: np.array(xs[n]) for n in range(8)}
-                ys_on_dict = {n: np.array(yons[n]) for n in range(8)}
-                ys_off_dict = {n: np.array(yoffs[n]) for n in range(8)}
-                yratios_dict = {n: np.array(yratios[n]) for n in range(8)}
+        if self.show_averages:
+            # Prepare data for aggregated averages using new function
+            xs_dict = {n: xs[n] for n in range(8)}
+            ys_on_dict = {n: yons[n] for n in range(8)}
+            ys_off_dict = {n: yoffs[n] for n in range(8)}
 
-                # Calculate aggregated averages (median) with intelligent binning
-                avg_on = self.calculate_aggregated_averages(xs_dict, ys_on_dict, use_median=True)
-                avg_off = self.calculate_aggregated_averages(xs_dict, ys_off_dict, use_median=True)
-                avg_ratio = self.calculate_aggregated_averages(xs_dict, yratios_dict, use_median=True)
-
+            # Calculate aggregated averages (median) with intelligent binning
+            avg_on = self.calculate_aggregated_averages(xs_dict, ys_on_dict)
+            avg_off = self.calculate_aggregated_averages(xs_dict, ys_off_dict)
+            for n in range(8):
                 x_on_av, yon_av, yon_err = avg_on[n]
                 selected_block["abs"]["sources"]["on_av"][n].data=dict(x=x_on_av, y=yon_av)
 
@@ -499,8 +496,7 @@ class Data_Visualization():
                 # Calculate ratio error from on/off averages using error propagation
                 yratio_av = yon_av / yoff_av if np.all(yoff_av != 0) else np.nan * np.ones_like(yon_av)
                 #yratio_err = np.sqrt((yon_err/yoff_av)**2 + (yon_av/(yoff_av**2)*yoff_err)**2) if np.all(yoff_av != 0) else np.nan * np.ones_like(yon_av)
-
-                selected_block["ratio"]["sources"]["ratio_av"][n].data=dict(x=x_on_av, y=yratio_av)
+                selected_block["ratio"]["sources"]["ratio_av"][n].data=dict(x=x_on_av, y=yratio_av, )
         # MANUALLY REBUILD LEGENDS FOR 'SELECTED' ONLY
         for panel_key in ["abs", "ratio"]:
             fig = selected_block[panel_key]["fig"]
